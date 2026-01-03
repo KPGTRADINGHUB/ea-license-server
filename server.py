@@ -1,11 +1,10 @@
 from flask import Flask, request, jsonify
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 app = Flask(__name__)
 
-# Đường dẫn file lưu license (trên Render, dùng ephemeral disk)
 LICENSE_FILE = "/tmp/licenses.json"
 
 def load_licenses():
@@ -20,7 +19,7 @@ def save_licenses(data):
 
 @app.route('/validate', methods=['POST'])
 def validate():
-    data = request.json
+    data = request.get_json()
     key = data.get("key")
     account_id = data.get("account_id")
 
@@ -34,11 +33,9 @@ def validate():
 
     lic = licenses[key]
 
-    # Kiểm tra đã dùng chưa
     if lic.get("used", False):
         return jsonify({"status": "expired"}), 200
 
-    # Ghi nhận đã dùng
     lic["used"] = True
     lic["used_at"] = datetime.now().isoformat()
     lic["account_id"] = account_id
@@ -48,7 +45,27 @@ def validate():
 
 @app.route('/add_license', methods=['POST'])
 def add_license():
-    data = request.json
+    data = request.get_json()
     key = data.get("key")
     duration = data.get("duration_seconds", 300)
-    max_uses = data.get("max_uses",
+    max_uses = data.get("max_uses", 1)
+
+    if not key:
+        return jsonify({"status": "error", "message": "Missing key"}), 400
+
+    licenses = load_licenses()
+    licenses[key] = {
+        "duration_seconds": duration,
+        "max_uses": max_uses,
+        "created_at": datetime.now().isoformat()
+    }
+    save_licenses(licenses)
+    return jsonify({"status": "added", "key": key}), 200
+
+@app.route('/licenses', methods=['GET'])
+def list_licenses():
+    licenses = load_licenses()
+    return jsonify(licenses), 200
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
